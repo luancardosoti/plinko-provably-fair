@@ -70,7 +70,7 @@ export function BetPlinkoModal({ game }: BetPlinkoModalProps) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="link" className="text-muted-foreground font-extrabold capitalize text-sm hover:no-underline tracking-tight hover:text-primary-500" size="sm">
+        <Button variant="link" className="px-0 text-muted-foreground font-extrabold capitalize text-sm hover:no-underline tracking-tight hover:text-primary-500" size="sm">
           Plinko
         </Button>
       </DialogTrigger>

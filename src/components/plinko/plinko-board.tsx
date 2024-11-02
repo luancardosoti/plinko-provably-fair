@@ -127,7 +127,7 @@ export function PlinkoBoard({ width, height }: PlinkoBoardProps) {
     return {
       x: pin.x + (direction === 'left' ? -1 : 1) * GAME_CONSTANTS.PIN.GAP/4,
       y: pin.y,
-      vx: (direction === 'left' ? -1 : 1) * GAME_CONSTANTS.BALL.SPEED * 0.5,
+      vx: (direction === 'left' ? -1 : 1) * GAME_CONSTANTS.BALL.SPEED * 0.4,
       vy: GAME_CONSTANTS.BALL.SPEED
     };
   };
@@ -246,7 +246,7 @@ export function PlinkoBoard({ width, height }: PlinkoBoardProps) {
   }, [balls])
 
   return (
-    <div className='bg-primary-800 p-5 flex flex-col items-center'>
+    <div className='bg-primary-800 py-5 flex flex-col items-center'>
       <canvas
         ref={canvasRef}
         width={width}
@@ -254,14 +254,17 @@ export function PlinkoBoard({ width, height }: PlinkoBoardProps) {
         className='bg-primary-800'
       />
       
-      <div className='flex gap-2'>
+      <div className='flex gap-[2px] justify-center w-full'>
         {GAME_CONSTANTS.MULTIPLIERS['low'].map((multiplier, i) => (
           <div 
             key={i} 
-            className={`text-white text-sm p-2 rounded-md`}
-            style={{ backgroundColor: GAME_CONSTANTS.COLORS[multiplier as keyof typeof GAME_CONSTANTS.COLORS] }}
+            className="text-white flex items-center justify-center rounded-sm aspect-square"
+            style={{ 
+              backgroundColor: GAME_CONSTANTS.COLORS[multiplier as keyof typeof GAME_CONSTANTS.COLORS],
+              width: `${100 / GAME_CONSTANTS.MULTIPLIERS['low'].length}%`
+            }}
           >
-            <span className='text-xs font-extrabold text-zinc-800'>{multiplier}</span>
+            <span className='text-[clamp(10px,1vw,12px)] font-extrabold text-zinc-800'>{multiplier}</span>
           </div>
         ))}
       </div>
