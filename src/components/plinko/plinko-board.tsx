@@ -1,17 +1,22 @@
 'use client';
-import { usePlinkoStore } from '@/stores/usePlinkoStore';
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 
-const GAME_CONSTANTS = {
+import { usePlinkoStore, type Ball } from '@/stores/plinko-store';
+import { useEffect, useMemo, useRef, useCallback } from 'react';
+
+export const GAME_CONSTANTS = {
   PIN: {
     SIZE: 8,
     GAP: 24,
   },
   BALL: {
-    SIZE: 4,
-    SPEED: 2,
+    SIZE: 6,
+    SPEED: 2.5,
   },
-  MULTIPLIERS: ['16x', '9x', '2x', '1.4x', '1.4x', '1.2x', '1.1x', '1x', '0.5x', '1x', '1.1x', '1.2x', '1.4x', '1.4x', '2x', '9x', '16x'],
+  MULTIPLIERS: {
+    'low': ['16x', '9x', '2x', '1.4x', '1.4x', '1.2x', '1.1x', '1x', '0.5x', '1x', '1.1x', '1.2x', '1.4x', '1.4x', '2x', '9x', '16x'],
+    'medium': [],
+    'high': [],
+  },
   COLORS: {
     '16x': '#FF3333',  
     '9x': '#FF4444',  
@@ -24,17 +29,9 @@ const GAME_CONSTANTS = {
   },
 } as const;
 
-interface Ball {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-}
-
 interface PlinkoBoardProps {
   width: number;
   height: number;
-  rows: number;
 }
 
 interface Pin {
@@ -49,7 +46,7 @@ function usePins(rows: number, width: number, height: number): Pin[] {
     const verticalSpace = height - (verticalPadding * 2);
     const verticalGap = verticalSpace / (rows - 1);
     
-    const multiplierWidth = width / GAME_CONSTANTS.MULTIPLIERS.length;
+    const multiplierWidth = width / GAME_CONSTANTS.MULTIPLIERS['low'].length;
     
     for (let row = 0; row < rows; row++) {
       const pinsInRow = row + 3;
@@ -77,159 +74,176 @@ const renderUtils = {
     ctx.closePath();
   },
 
-  drawBall: (ctx: CanvasRenderingContext2D, ball: Ball) => {
+  drawBall: (ctx: CanvasRenderingContext2D, x: number, y: number) => {
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, GAME_CONSTANTS.BALL.SIZE, 0, Math.PI * 2);
-    ctx.fillStyle = 'pink';
+    ctx.arc(x, y, GAME_CONSTANTS.BALL.SIZE, 0, Math.PI * 2);
+    ctx.fillStyle = 'yellow';
     ctx.fill();
     ctx.closePath();
   },
-
-  drawMultiplier: (
-    ctx: CanvasRenderingContext2D, 
-    multiplier: string, 
-    x: number, 
-    y: number, 
-    width: number,
-    height: number
-  ) => {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(x, y, width - 1, height);
-
-    const color = GAME_CONSTANTS.COLORS[multiplier as keyof typeof GAME_CONSTANTS.COLORS] || GAME_CONSTANTS.COLORS['1x'];
-    const gradient = ctx.createLinearGradient(x, y, x, y + height);
-    gradient.addColorStop(0, color);
-    gradient.addColorStop(1, adjustColor(color, -20));
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x, y, width - 1, height);
-
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-    ctx.shadowBlur = 2;
-    ctx.fillStyle = 'white';
-    ctx.font = `bold ${height * 0.35}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(multiplier, x + width/2, y + height/2);
-    ctx.shadowBlur = 0;
-  }
 };
 
-function adjustColor(color: string, amount: number): string {
-  const hex = color.replace('#', '');
-  const r = Math.max(0, Math.min(255, parseInt(hex.substring(0, 2), 16) + amount));
-  const g = Math.max(0, Math.min(255, parseInt(hex.substring(2, 4), 16) + amount));
-  const b = Math.max(0, Math.min(255, parseInt(hex.substring(4, 6), 16) + amount));
+function getCurrentRow(pinIndex: number): number {
+  let pinsSum = 0;
+  let currentRow = 0;
   
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  while (pinsSum <= pinIndex) {
+    currentRow++;
+    pinsSum += currentRow + 2;
+  }
+  
+  return currentRow - 1;
 }
 
-export function PlinkoBoard({ width, height, rows }: PlinkoBoardProps) {
-  const animationRef = useRef<number>();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [balls, setBalls] = useState<Ball[]>([]);
-  const pins = usePins(rows, width - width * 0.05, height);
+interface AnimationBall {
+  animationRefNumber: number | undefined;
+  ball: Ball;
+}
 
-  const { isDropping, finishBall} = usePlinkoStore(state => state);
+interface BallMovement {
+  x: number;
+  y: number;
+  vx?: number;
+  vy?: number;
+}
+
+export function PlinkoBoard({ width, height }: PlinkoBoardProps) {
+  const { rows } = usePlinkoStore(state => state);
+  
+  const { balls, drawAllBalls } = usePlinkoStore(state => state)
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animations = useRef<AnimationBall[]>([]);
+  const pins = usePins(Number(rows), width - width * 0.05, height);
 
   const drawPins = useCallback((ctx: CanvasRenderingContext2D) => {
+    ctx.clearRect(0, 0, width, height);
     pins.forEach(pin => renderUtils.drawPin(ctx, pin));
   }, [pins]);
 
-  const drawMultipliers = useCallback((ctx: CanvasRenderingContext2D) => {
-    const multiplierHeight = height * 0.06;
-    const multiplierY = height - multiplierHeight;
-    const multiplierWidth = width / GAME_CONSTANTS.MULTIPLIERS.length;
-    
-    GAME_CONSTANTS.MULTIPLIERS.forEach((mult, index) => {
-      renderUtils.drawMultiplier(
-        ctx, 
-        mult, 
-        index * multiplierWidth, 
-        multiplierY, 
-        multiplierWidth,
-        multiplierHeight
-      );
-    });
-  }, [height, width]);
+  const handleCollision = (ball: Ball, pin: Pin, currentRow: number): BallMovement => {
+    const direction = ball.directions[currentRow];
 
-  const handleCollision = (ball: Ball, pin: Pin): Ball => {
-    const direction = Math.random() < 0.5 ? -1 : 1;
     return {
-      ...ball,
-      x: pin.x + (direction * GAME_CONSTANTS.PIN.GAP/4),
+      x: pin.x + (direction === 'left' ? -1 : 1) * GAME_CONSTANTS.PIN.GAP/4,
       y: pin.y,
-      vx: direction * GAME_CONSTANTS.BALL.SPEED * 0.5,
+      vx: (direction === 'left' ? -1 : 1) * GAME_CONSTANTS.BALL.SPEED * 0.5,
       vy: GAME_CONSTANTS.BALL.SPEED
     };
   };
 
-  const animate = useCallback((ctx: CanvasRenderingContext2D, ball: Ball) => {
-    ctx.clearRect(0, 0, width, height);
-    drawPins(ctx);
-    drawMultipliers(ctx);
+  const animate = useCallback((ctx: CanvasRenderingContext2D, ball: Ball, ballMovement?: BallMovement) => {
+    const prevX = ballMovement?.x || width / 2;
+    const prevY = ballMovement?.y || 0;
+    ctx.clearRect(
+      prevX - GAME_CONSTANTS.BALL.SIZE * 2,
+      prevY - GAME_CONSTANTS.BALL.SIZE * 2,
+      GAME_CONSTANTS.BALL.SIZE * 4,
+      GAME_CONSTANTS.BALL.SIZE * 4
+    );
     
-    let updatedBall = {
-      ...ball,
-      x: ball.x + ball.vx,
-      y: ball.y + ball.vy
+    pins.forEach(pin => {
+      const dx = prevX - pin.x;
+      const dy = prevY - pin.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < GAME_CONSTANTS.BALL.SIZE * 2 + GAME_CONSTANTS.PIN.SIZE) {
+        renderUtils.drawPin(ctx, pin);
+      }
+    });
+
+    const x = ballMovement?.x || width / 2;
+    const y = ballMovement?.y || 0;
+    const vx = ballMovement?.vx || 0;
+    const vy = ballMovement?.vy || GAME_CONSTANTS.BALL.SPEED;
+    
+    let updatedBall: BallMovement = {
+      ...ballMovement,
+      x: x + vx,
+      y: y + vy
     };
-    
-    pins.forEach((pin) => {
+
+    pins.forEach((pin, indexPin) => {
       const dx = updatedBall.x - pin.x;
       const dy = updatedBall.y - pin.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance < (GAME_CONSTANTS.PIN.SIZE/2 + GAME_CONSTANTS.BALL.SIZE/2)) {
-        updatedBall = handleCollision(updatedBall, pin);
+        const currentRowPin = getCurrentRow(indexPin)
+        updatedBall = handleCollision(ball, pin, currentRowPin);
       }
     });
-
+ 
     if (updatedBall.y < height) {
-      renderUtils.drawBall(ctx, updatedBall);
-      animationRef.current = requestAnimationFrame(() => animate(ctx, updatedBall));
+      renderUtils.drawBall(ctx, updatedBall.x, updatedBall.y);
+      const newAnimationRefNumber = requestAnimationFrame(() => animate(ctx, ball, updatedBall));
+      UpdateAnimationRefNumber(ball.id, newAnimationRefNumber)
     } else {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      finishBall()
+      clearAnimation(ball.id)
+      ball.callback()
     }
-}, [width, height, pins, drawPins, drawMultipliers]);
-
-  const handleNewBall = useCallback(() => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-
-    const newBall: Ball = {
-      x: width / 2,
-      y: 0,
-      vx: 0,
-      vy: GAME_CONSTANTS.BALL.SPEED
-    };
-
-    animationRef.current = requestAnimationFrame(() => animate(ctx, newBall));
-    setBalls(prev => [...prev, newBall]);
-  }, [width, animate]);
+}, [width, height, pins, drawPins]);
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
 
     drawPins(ctx);
-    drawMultipliers(ctx);
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      clearAllAnimations()
     };
-  }, [drawPins, drawMultipliers]);
+  }, [drawPins]);
+
+  function clearAllAnimations() {
+    const currentAnimations = animations.current
+    currentAnimations.forEach(animation => {
+      if (animation.animationRefNumber) {
+        cancelAnimationFrame(animation.animationRefNumber);
+      }
+    });
+    animations.current = []
+  }
+
+  function clearAnimation(ballId: string) {
+    const currentAnimations = animations.current
+    const animationIndex = currentAnimations.findIndex(animation => animation.ball.id === ballId)
+    if (animationIndex !== -1) {
+      if (currentAnimations[animationIndex].animationRefNumber) {
+        cancelAnimationFrame(currentAnimations[animationIndex].animationRefNumber);
+        currentAnimations[animationIndex].animationRefNumber = undefined
+      }
+    }
+  }
+
+  function UpdateAnimationRefNumber(ballId: string, animationRefNumber: number) {
+    const currentAnimations = animations.current
+    const animationIndex = currentAnimations.findIndex(animation => animation.ball.id === ballId)
+    if (animationIndex !== -1) {
+      currentAnimations[animationIndex].animationRefNumber = animationRefNumber
+    }
+  }
 
   useEffect(() => {
-    if (isDropping) {
-      handleNewBall();
+    const ballsWithoutDraw = balls.filter(ball => ball.drawn === false);
+    if (ballsWithoutDraw.length === 0) return;
+
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return;
+
+    const existingBallIds = animations.current.map(a => a.ball.id);
+    const newBalls = ballsWithoutDraw.filter(ball => !existingBallIds.includes(ball.id));
+
+    for (const ball of newBalls) {
+      const animationRefNumber = requestAnimationFrame(() => animate(ctx, ball));
+  
+      animations.current.push({
+        animationRefNumber,
+        ball
+      });
     }
-  }, [isDropping, handleNewBall]);
+
+    drawAllBalls()
+  }, [balls])
 
   return (
     <div className='bg-primary-800 p-5 flex flex-col items-center'>
@@ -239,6 +253,18 @@ export function PlinkoBoard({ width, height, rows }: PlinkoBoardProps) {
         height={height}
         className='bg-primary-800'
       />
+      
+      <div className='flex gap-2'>
+        {GAME_CONSTANTS.MULTIPLIERS['low'].map((multiplier, i) => (
+          <div 
+            key={i} 
+            className={`text-white text-sm p-2 rounded-md`}
+            style={{ backgroundColor: GAME_CONSTANTS.COLORS[multiplier as keyof typeof GAME_CONSTANTS.COLORS] }}
+          >
+            <span className='text-xs font-extrabold text-zinc-800'>{multiplier}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

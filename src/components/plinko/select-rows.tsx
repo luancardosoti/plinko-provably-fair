@@ -9,28 +9,27 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+export const rowsOptions = ['16'] as const
+// TODO: add 8, 9, 10, 11, 12, 13, 14, 15
+
 interface SelectRowsProps {
   defaultValue?: string;
   value?: string;
+  onChange?: (value: string) => void;
+  disabled?: boolean;
 }
 
-export function SelectRows({ defaultValue, value }: SelectRowsProps) {
+export function SelectRows({ defaultValue, value, onChange, disabled }: SelectRowsProps) {
   return (
-    <Select defaultValue={defaultValue} value={value}>
-      <SelectTrigger className="">
+    <Select defaultValue={defaultValue} value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger>
         <SelectValue placeholder="Select a rows" />
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem value="8">8</SelectItem>
-          <SelectItem value="9">9</SelectItem>
-          <SelectItem value="10">10</SelectItem>
-          <SelectItem value="11">11</SelectItem>
-          <SelectItem value="12">12</SelectItem>
-          <SelectItem value="13">13</SelectItem>
-          <SelectItem value="14">14</SelectItem>
-          <SelectItem value="15">15</SelectItem>
-          <SelectItem value="16">16</SelectItem>
+          {rowsOptions.map((option) => (
+            <SelectItem key={option} value={option}>{option}</SelectItem>
+          ))}
         </SelectGroup>
       </SelectContent>
     </Select>
